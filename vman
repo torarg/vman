@@ -110,7 +110,7 @@ EOF
 
     # wait until autoinstall is finished
     echo "waiting for vm autoinstall to finish..."
-    while doas $VMCTL status | egrep -q "^.*running.*autoinstall_$vm_name$"; do
+    while $VMCTL status | egrep -q "^.*running.*autoinstall_$vm_name$"; do
         sleep 5
     done
 

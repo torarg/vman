@@ -12,6 +12,7 @@ INSTALL_CONF="$BASE_DIR/install.conf"
 
 VM_SWITCH="vm-network"
 OWNER="$USER"
+SSH_PUBKEY="$HOME/.ssh/id_ed25519.pub"
 
 INSTALLSET_URL="https://ftp.spline.de/pub/OpenBSD/snapshots/amd64"
 INSTALLSET_DIR="$BASE_DIR/installset"
@@ -40,6 +41,7 @@ BASE_DIR="$BASE_DIR"
 VM_SWITCH="$VM_SWITCH" # default vm network, can be overriden via cli
 OWNER="$USER"
 INSTALLSET_URL="$INSTALLSET_URL"
+SSH_PUBKEY="$SSH_PUBKEY"
 EOF
 }
     
@@ -102,6 +104,7 @@ EOF
     vm_install_conf="$WEBROOT/${vm_lladdr}-install.conf"
     cp $INSTALL_CONF $vm_install_conf_tmp || exit 1
     echo "system hostname = $vm_name" >> $vm_install_conf_tmp
+    echo "Public ssh key for root account = $(cat $SSH_PUBKEY)" >> $vm_install_conf_tmp
     cp $vm_install_conf_tmp $vm_install_conf || exit 1
     chmod o+r $vm_install_conf || exit 1
 
@@ -145,7 +148,6 @@ IPv4 address = dhcp
 IPv6 address = autoconf
 Password for root = *************
 Allow root ssh login = prohibit-password
-Public ssh key for root account = $SSH_PUBKEY
 Setup a user = no
 What timezone are you in = Europe/Berlin
 Location of sets = disk

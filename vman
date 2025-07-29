@@ -2,6 +2,7 @@
 
 VERSION=0.0.1
 
+VMCTL="/usr/sbin/vmctl"
 WEBROOT="/var/www/htdocs/vman"
 
 BASE_DIR="$HOME/vman"
@@ -68,7 +69,7 @@ add_vm() {
     mkdir -p $vm_dir || exit 1
 
     # create disk
-    vmctl create -s $disk_size $vm_disk || exit 1
+    $VMCTL create -s $disk_size $vm_disk || exit 1
 
     # write temporary vm config for autoinstall
     cat > $vm_config_tmp <<EOF
@@ -105,15 +106,15 @@ EOF
     chmod o+r $vm_install_conf || exit 1
 
     # install vm
-    doas vmctl load $vm_config_tmp || exit 1
+    doas $VMCTL load $vm_config_tmp || exit 1
 
     # wait until autoinstall is finished
     echo "waiting for vm autoinstall to finish..."
-    while vmctl status autoinstall_$vm_name | egrep -q "^.*running.*autoinstall_$vm_name$"; do
+    while doas $VMCTL status | egrep -q "^.*running.*autoinstall_$vm_name$"; do
         sleep 5
     done
 
-    doas vmctl reload || exit 1
+    doas $VMCTL reload || exit 1
 }
 
 delete_vm() {
@@ -128,12 +129,12 @@ delete_vm() {
     vm_disk="$vm_dir/disk.img"
     vm_config="$vm_dir/vm.conf"
 
-    vmctl stop -w -f $vm_name
+    $VMCTL stop -w -f $vm_name
 
     sed -i "/include.*$vm_name.*vm.conf/d" $VM_CONF || exit 1
 
     rm -r $vm_dir || exit 1
-    doas vmctl reload || exit 1
+    doas $VMCTL reload || exit 1
 }
 
 write_install_conf() {

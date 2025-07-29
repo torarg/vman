@@ -205,4 +205,5 @@ case "$command" in
     add) add_vm "$@" ;;
     delete) delete_vm "$@" ;;
     init) init "$@" ;;
+    *) echo $usage ; err_exit "invalid arg(s)" ;;
 esac

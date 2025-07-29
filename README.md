@@ -37,6 +37,7 @@ Setup doas.conf (as root)
 # cat >> /etc/doas.conf <<EOF
 permit nopass _vman as root cmd /usr/sbin/vmctl args load
 permit nopass _vman as root cmd /usr/sbin/vmctl args reload
+permit nopass _vman as root cmd /usr/sbin/vmctl args status
 EOF
 ```
 

@@ -16,7 +16,7 @@ SSH_PUBKEY="$HOME/.ssh/id_ed25519.pub"
 
 INSTALLSET_URL="https://ftp.spline.de/pub/OpenBSD/snapshots/amd64"
 INSTALLSET_DIR="$BASE_DIR/installset"
-INSTALL_IMG="$(ftp -o - $INSTALLSET_URL 2>/dev/null | grep 'install.*.img' | cut -f 2 -d '"')"
+INSTALL_IMG="$(ftp -o - $INSTALLSET_URL/SHA256 2>/dev/null | grep 'install.*.img' | tail -1 | awk '{ print $2 }' | tr -d '()')"
 
 VMANRC="$HOME/.vmanrc"
 

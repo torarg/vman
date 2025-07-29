@@ -21,7 +21,7 @@ Configure httpd for autoinstall (as root)
 # mkdir /var/www/htdocs/vman
 # chown www:_vman
 # cat > /etc/httpd.conf <<EOF
-server "*" {
+server "default" {
         listen on * port 80
         location "/*install.conf" {
                 root "/htdocs/vman"

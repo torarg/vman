@@ -45,34 +45,7 @@ SSH_PUBKEY="$SSH_PUBKEY"
 EOF
 }
     
-
-add_vm() {
-    usage="usage: vman add -n NAME -d DISK_SIZE -m MEMORY_SIZE [-s SWITCH_NAME]"
-    while getopts :n:d:m:n: flag; do
-        case "${flag}" in
-            n) vm_name="$OPTARG" ;;
-            d) disk_size="$OPTARG" ;;
-            m) memory_size="$OPTARG" ;;
-            s) VM_SWITCH="$OPTARG" ;;
-            ?) echo $usage ; err_exit "invalid arg(s)" ;;
-        esac
-    done
-    if [ -z "$vm_name" ] || [ -z "$disk_size" ] || [ -z "$memory_size" ]; then
-        echo "$usage"
-        err_exit "invalid arg(s)"
-    fi
-
-    vm_dir="$VM_BASE_DIR/$vm_name"
-    vm_disk="$vm_dir/disk.img"
-    vm_config="$vm_dir/vm.conf"
-    vm_config_tmp="$vm_dir/_vm.conf"
-    vm_lladdr="$(echo $vm_name | md5 | sed 's/^\(..\)\(..\)\(..\)\(..\)\(..\).*$/02:\1:\2:\3:\4:\5/')"
-    [ -e "$vm_dir" ] && err_exit "$vm_dir already exists."
-    mkdir -p $vm_dir || exit 1
-
-    # create disk
-    $VMCTL create -s $disk_size $vm_disk || exit 1
-
+write_vm_config() {
     # write temporary vm config for autoinstall
     cat > $vm_config_tmp <<EOF
 vm "autoinstall_$vm_name" {
@@ -95,11 +68,9 @@ vm "$vm_name" {
     owner $OWNER
 }
 EOF
+}
 
-    # include vm config
-    echo "include \"$vm_config\"" >> $VM_CONF
-
-    # prepare autoinstall config
+write_autoinstall_conf() {
     vm_install_conf_tmp="$vm_dir/${vm_lladdr}-install.conf"
     vm_install_conf="$WEBROOT/${vm_lladdr}-install.conf"
     cp $INSTALL_CONF $vm_install_conf_tmp || exit 1
@@ -107,9 +78,51 @@ EOF
     echo "Public ssh key for root account = $(cat $SSH_PUBKEY)" >> $vm_install_conf_tmp
     cp $vm_install_conf_tmp $vm_install_conf || exit 1
     chmod o+r $vm_install_conf || exit 1
+}
+
+add_vm() {
+    usage="usage: vman add [-c] -n NAME -d DISK_SIZE -m MEMORY_SIZE [-s SWITCH_NAME]"
+    while getopts :n:d:m:n:c flag; do
+        case "${flag}" in
+            n) vm_name="$OPTARG" ;;
+            d) disk_size="$OPTARG" ;;
+            m) memory_size="$OPTARG" ;;
+            s) VM_SWITCH="$OPTARG" ;;
+            c) attach_console="yes" ;;
+            ?) echo $usage ; err_exit "invalid arg(s)" ;;
+        esac
+    done
+    if [ -z "$vm_name" ] || [ -z "$disk_size" ] || [ -z "$memory_size" ]; then
+        echo "$usage"
+        err_exit "invalid arg(s)"
+    fi
+
+    vm_dir="$VM_BASE_DIR/$vm_name"
+    vm_disk="$vm_dir/disk.img"
+    vm_config="$vm_dir/vm.conf"
+    vm_config_tmp="$vm_dir/_vm.conf"
+    vm_lladdr="$(echo $vm_name | md5 | sed 's/^\(..\)\(..\)\(..\)\(..\)\(..\).*$/02:\1:\2:\3:\4:\5/')"
+
+    # create vm dir
+    [ -e "$vm_dir" ] && err_exit "$vm_dir already exists."
+    mkdir -p $vm_dir || exit 1
+
+    # create disk
+    $VMCTL create -s $disk_size $vm_disk || exit 1
+
+    write_vm_config || exit 1
+
+    # include vm config in main vm.conf
+    echo "include \"$vm_config\"" >> $VM_CONF
+
+    # prepare autoinstall config and write it to webroot
+    write_autoinstall_conf || exit 1
 
     # install vm
     doas $VMCTL load $vm_config_tmp || exit 1
+
+    # attach to console if requested
+    [ "$attach_console" == "yes" ] && vmctl console autoinstall_$vm_name
 
     # wait until autoinstall is finished
     echo "waiting for vm autoinstall to finish..."

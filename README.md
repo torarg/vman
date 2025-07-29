@@ -1,5 +1,5 @@
 # vman
-vman aims to support OpenBSD VM management.
+vman manages OpenBSD vms.
 
 ## features
 - create and delete vms

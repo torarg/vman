@@ -1,0 +1,205 @@
+#!/bin/ksh
+
+VERSION=0.0.1
+
+WEBROOT="/var/www/htdocs/vman"
+
+BASE_DIR="$HOME/vman"
+VM_BASE_DIR="$BASE_DIR/vms"
+VM_CONF="$BASE_DIR/vm.conf"
+INSTALL_CONF="$BASE_DIR/install.conf"
+
+VM_SWITCH="vm-network"
+OWNER="$USER"
+
+INSTALLSET_URL="https://ftp.spline.de/pub/OpenBSD/snapshots/amd64"
+INSTALLSET_DIR="$BASE_DIR/installset"
+INSTALL_IMG="$(ftp -o - $INSTALLSET_URL 2>/dev/null | grep 'install.*.img' | cut -f 2 -d '"')"
+
+VMANRC="$HOME/.vmanrc"
+
+[ -f "$VMANRC" ] && . $VMANRC
+
+err_exit() {
+    echo "error: $@" >&2
+    exit 1
+}
+
+get_installset() {
+    [ ! -e "$INSTALLSET_DIR" ] && mkdir -p $INSTALLSET_DIR
+    ftp -o $INSTALLSET_DIR/$INSTALL_IMG $INSTALLSET_URL/$INSTALL_IMG
+    ftp -o $INSTALLSET_DIR/bsd $INSTALLSET_URL/bsd
+    ftp -o $INSTALLSET_DIR/bsd.rd $INSTALLSET_URL/bsd.rd
+}
+
+write_config() {
+    cat > $VMANRC <<EOF
+WEBROOT="$WEBROOT"
+BASE_DIR="$BASE_DIR"
+VM_SWITCH="$VM_SWITCH" # default vm network, can be overriden via cli
+OWNER="$USER"
+INSTALLSET_URL="$INSTALLSET_URL"
+EOF
+}
+    
+
+add_vm() {
+    usage="usage: vman add -n NAME -d DISK_SIZE -m MEMORY_SIZE [-s SWITCH_NAME]"
+    while getopts :n:d:m:n: flag; do
+        case "${flag}" in
+            n) vm_name="$OPTARG" ;;
+            d) disk_size="$OPTARG" ;;
+            m) memory_size="$OPTARG" ;;
+            s) VM_SWITCH="$OPTARG" ;;
+            ?) echo $usage ; err_exit "invalid arg(s)" ;;
+        esac
+    done
+    if [ -z "$vm_name" ] || [ -z "$disk_size" ] || [ -z "$memory_size" ]; then
+        echo "$usage"
+        err_exit "invalid arg(s)"
+    fi
+
+    vm_dir="$VM_BASE_DIR/$vm_name"
+    vm_disk="$vm_dir/disk.img"
+    vm_config="$vm_dir/vm.conf"
+    vm_config_tmp="$vm_dir/_vm.conf"
+    vm_lladdr="$(echo $vm_name | md5 | sed 's/^\(..\)\(..\)\(..\)\(..\)\(..\).*$/02:\1:\2:\3:\4:\5/')"
+    [ -e "$vm_dir" ] && err_exit "$vm_dir already exists."
+    mkdir -p $vm_dir || exit 1
+
+    # create disk
+    vmctl create -s $disk_size $vm_disk || exit 1
+
+    # write temporary vm config for autoinstall
+    cat > $vm_config_tmp <<EOF
+vm "autoinstall_$vm_name" {
+    disk "$vm_disk"
+    disk "$INSTALLSET_DIR/$INSTALL_IMG"
+    memory 1G
+    boot "$INSTALLSET_DIR/bsd.rd"
+    boot device net
+    local interface { lladdr "$vm_lladdr" }
+    owner $OWNER
+}
+EOF
+    # write vm config
+    cat > $vm_config <<EOF
+vm "$vm_name" {
+    disk "$vm_disk"
+    memory "$memory_size"
+    boot "$INSTALLSET_DIR/bsd"
+    interface { switch "$VM_SWITCH" lladdr "$vm_lladdr" }
+    owner $OWNER
+}
+EOF
+
+    # include vm config
+    echo "include \"$vm_config\"" >> $VM_CONF
+
+    # prepare autoinstall config
+    vm_install_conf_tmp="$vm_dir/${vm_lladdr}-install.conf"
+    vm_install_conf="$WEBROOT/${vm_lladdr}-install.conf"
+    cp $INSTALL_CONF $vm_install_conf_tmp || exit 1
+    echo "system hostname = $vm_name" >> $vm_install_conf_tmp
+    cp $vm_install_conf_tmp $vm_install_conf || exit 1
+    chmod o+r $vm_install_conf || exit 1
+
+    # install vm
+    doas vmctl load $vm_config_tmp || exit 1
+
+    # wait until autoinstall is finished
+    echo "waiting for vm autoinstall to finish..."
+    while vmctl status autoinstall_$vm_name | egrep -q "^.*running.*autoinstall_$vm_name$"; do
+        sleep 5
+    done
+
+    doas vmctl reload || exit 1
+}
+
+delete_vm() {
+    usage="usage: vman delete NAME"
+    vm_name="$1"
+    if [ -z "$vm_name" ] || [ "$#" -ne 1 ]; then
+        echo "$usage"
+        err_exit "invalid arg(s)"
+    fi
+
+    vm_dir="$VM_BASE_DIR/$vm_name"
+    vm_disk="$vm_dir/disk.img"
+    vm_config="$vm_dir/vm.conf"
+
+    vmctl stop -w -f $vm_name
+
+    sed -i "/include.*$vm_name.*vm.conf/d" $VM_CONF || exit 1
+
+    rm -r $vm_dir || exit 1
+    doas vmctl reload || exit 1
+}
+
+write_install_conf() {
+    cat > $INSTALL_CONF <<EOF
+Which network interface = vio0
+Which disk is the root disk = sd0
+IPv4 address = dhcp
+IPv6 address = autoconf
+Password for root = *************
+Allow root ssh login = prohibit-password
+Public ssh key for root account = $SSH_PUBKEY
+Setup a user = no
+What timezone are you in = Europe/Berlin
+Location of sets = disk
+Is the disk partition already mounted = no
+Continue without verification = yes
+EOF
+}
+
+init() {
+    echo "Setting up base directory ($BASE_DIR)..."
+    mkdir -p $VM_BASE_DIR
+    touch $VM_CONF
+
+    if [ ! -e "$INSTALL_CONF" ]; then
+        write_install_conf
+    fi
+
+    if [ ! -e "$VMANRC" ]; then
+        echo "Writing default config to $VMANRC"
+        write_config
+    fi
+
+    if [ ! -d "$INSTALLSET_DIR" ]; then
+        echo "Fetching installsets..."
+        get_installset >/dev/null
+    fi
+
+    echo "Initialization finished."
+    echo
+    echo "To get started, please do the following:"
+    echo "  - define a switch named 'vm-network' in /etc/vm.conf"
+    echo "  - include $VM_CONF in /etc/vm.conf"
+    echo "  - check configuration in $VMANRC"
+    echo "  - create and serve $WEBROOT on port 80"
+    echo "  - ensure you got write access to $WEBROOT"
+    echo "  - ensure you got doas permissions for vmctl load|reload"
+}
+
+usage="usage: vman [-hV] command [arg ...]"
+commands="commands: init add delete get-installset"
+help="$usage\n$commands"
+
+if [ $# -lt 1 ]; then
+    echo $usage
+    exit 1
+fi
+
+command="$1"
+shift 1
+
+case "$command" in
+    -h) echo $help ; exit ;;
+    -V) echo $VERSION ; exit ;;
+    get-installset) get_installset ;;
+    add) add_vm "$@" ;;
+    delete) delete_vm "$@" ;;
+    init) init "$@" ;;
+esac

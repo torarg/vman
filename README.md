@@ -74,6 +74,39 @@ To get started, please do the following:
   - ensure you got doas permissions for vmctl load|reload
 ```
 
+The init command created a base directory, fetched the latest install set
+for -current and setup some default configuration files.
+
+Have a look at the generated config files and adapt them to your needs:
+
+autoinstall config
+```
+$ cat ~/vman/install.conf
+Which network interface = vio0
+Which disk is the root disk = sd0
+IPv4 address = dhcp
+IPv6 address = autoconf
+Password for root = *************
+Allow root ssh login = prohibit-password
+Setup a user = no
+What timezone are you in = Europe/Berlin
+Location of sets = disk
+Is the disk partition already mounted = no
+Continue without verification = yes
+```
+
+vman config
+```
+$ cat ~/.vmanrc
+WEBROOT="/var/www/htdocs/vman"
+BASE_DIR="/home/_vman/vman"
+VM_SWITCH="vm-network" # default vm network, can be overriden via cli
+OWNER="_vman"
+INSTALLSET_URL="https://ftp.spline.de/pub/OpenBSD/snapshots/amd64"
+SSH_PUBKEY="/home/_vman/.ssh/id_ed25519.pub"
+```
+
+
 Configure vmd (as root)
 ```
 # cat > /etc/vm.conf <<EOF

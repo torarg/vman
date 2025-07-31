@@ -122,5 +122,5 @@ EOF
 
 Create vm (as user)
 ```
-$ vman add -n new-vm -d 10g -m 2g
+$ vman add -s 10g -m 2g new-vm
 ```
